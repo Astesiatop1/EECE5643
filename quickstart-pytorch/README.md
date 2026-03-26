@@ -136,3 +136,10 @@ Or run with:
 ```bash
 flwr run . --run-config "num-server-rounds=20" --federation local-simulation
 ```
+
+Change the number of clients in C:\Users\username\.flwr\config.toml:
+```
+[superlink.local-simulation]
+# ... number of clients ...
+options.num-supernodes = 25
+```

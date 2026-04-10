@@ -65,6 +65,25 @@ def _create_resnet18(in_channels: int = 3, num_classes: int = 10) -> nn.Module:
     model = resnet18(weights=None, num_classes=num_classes)
     model.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
     model.maxpool = nn.Identity()
+    # Replace all BatchNorm layers with track_running_stats=False.
+    # This removes num_batches_tracked (int64) from state_dict, which is
+    # incompatible with Flower's ArrayRecord/aggregation strategies.
+    # Also recommended in FL since running stats are local per-client.
+    for name, module in model.named_modules():
+        if isinstance(module, nn.BatchNorm2d):
+            new_bn = nn.BatchNorm2d(
+                module.num_features,
+                eps=module.eps,
+                momentum=module.momentum,
+                affine=module.affine,
+                track_running_stats=False,
+            )
+            # Set the new module on the parent
+            parts = name.split(".")
+            parent = model
+            for p in parts[:-1]:
+                parent = getattr(parent, p)
+            setattr(parent, parts[-1], new_bn)
     return model
 
 

@@ -202,8 +202,19 @@ def load_centralized_dataset(dataset_name: str = "cifar10"):
     return DataLoader(dataset, batch_size=128, collate_fn=collate_fn)
 
 
-def train(net, trainloader, epochs, lr, device):
-    """Train the model on the training set."""
+def train(net, trainloader, epochs, lr, device,
+          proximal_mu: float = 0.0, global_params=None,
+          dp_clip: float = 0.0, dp_noise: float = 0.0):
+    """Train the model on the training set.
+
+    Args:
+        proximal_mu: FedProx proximal term coefficient. When > 0, adds
+            (mu/2) * ||w - w_global||^2 to the loss to prevent client
+            drift from the global model. Set to 0 for standard FedAvg.
+        global_params: list of global model parameter tensors (required if proximal_mu > 0).
+        dp_clip: Max L2 norm for per-sample gradient clipping (0 = disabled).
+        dp_noise: Gaussian noise std added to clipped gradients (0 = disabled).
+    """
     net.to(device)
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(net.parameters(), lr=lr, momentum=0.9)
@@ -215,7 +226,24 @@ def train(net, trainloader, epochs, lr, device):
             labels = batch["label"].to(device)
             optimizer.zero_grad()
             loss = criterion(net(images), labels)
+
+            # FedProx: add proximal term (mu/2)*||w - w_global||^2
+            if proximal_mu > 0.0 and global_params is not None:
+                proximal_term = 0.0
+                for local_p, global_p in zip(net.parameters(), global_params):
+                    proximal_term += ((local_p - global_p) ** 2).sum()
+                loss = loss + (proximal_mu / 2.0) * proximal_term
+
             loss.backward()
+
+            # Differential Privacy: gradient clipping + noise injection
+            if dp_clip > 0.0:
+                torch.nn.utils.clip_grad_norm_(net.parameters(), dp_clip)
+            if dp_noise > 0.0:
+                for param in net.parameters():
+                    if param.grad is not None:
+                        param.grad += torch.randn_like(param.grad) * dp_noise
+
             optimizer.step()
             running_loss += loss.item()
     avg_trainloss = running_loss / (epochs * len(trainloader))

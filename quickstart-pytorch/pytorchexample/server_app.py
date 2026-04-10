@@ -6,7 +6,7 @@ from flwr.serverapp import Grid, ServerApp
 from flwr.serverapp.strategy import FedAvg, FedAdagrad
 
 from pytorchexample.task import get_model, load_centralized_dataset, test
-from pytorchexample.custom_strategy import CustomFedAvg, CustomFedAdagrad
+from pytorchexample.custom_strategy import CustomFedAvg, CustomFedAdagrad, CustomFedProx
 from pytorchexample.metrics_tracker import MetricsTracker
 
 # Create ServerApp
@@ -36,6 +36,10 @@ def build_strategy(context: Context):
     if strategy_name == "fedadagrad":
         strategy = CustomFedAdagrad(**common_kwargs)
         print(f"Using strategy: FedAdagrad, client selection: {client_selection}")
+    elif strategy_name == "fedprox":
+        proximal_mu = float(context.run_config.get("proximal-mu", 0.1))
+        strategy = CustomFedProx(proximal_mu=proximal_mu, **common_kwargs)
+        print(f"Using strategy: FedProx (mu={proximal_mu}), client selection: {client_selection}")
     else:
         strategy = CustomFedAvg(**common_kwargs)
         print(f"Using strategy: FedAvg, client selection: {client_selection}")

@@ -39,6 +39,14 @@ def train(msg: Message, context: Context):
         alpha=alpha,
     )
 
+    # Read FedProx and DP config
+    proximal_mu = float(msg.content["config"].get("proximal_mu", 0.0))
+    dp_clip = float(context.run_config.get("dp-clip", 0.0))
+    dp_noise = float(context.run_config.get("dp-noise", 0.0))
+
+    # Save a copy of global params for FedProx proximal term
+    global_params = [p.clone().detach() for p in model.parameters()] if proximal_mu > 0 else None
+
     # Call the training function
     train_loss = train_fn(
         model,
@@ -46,6 +54,10 @@ def train(msg: Message, context: Context):
         context.run_config["local-epochs"],
         msg.content["config"]["lr"],
         device,
+        proximal_mu=proximal_mu,
+        global_params=global_params,
+        dp_clip=dp_clip,
+        dp_noise=dp_noise,
     )
 
     # Construct and return reply Message

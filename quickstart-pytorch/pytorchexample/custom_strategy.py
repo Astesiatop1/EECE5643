@@ -203,6 +203,37 @@ class CustomFedAvg(FedAvg):
         return super().configure_train(server_round, arrays, config, grid)
 
 
+# ======================== Strategy: Custom FedProx ========================
+
+class CustomFedProx(FedAvg):
+    """FedProx: FedAvg + proximal term to handle non-IID data heterogeneity.
+
+    Reference: Li et al., "Federated Optimization in Heterogeneous Networks" (MLSys 2020).
+
+    The proximal term (mu/2)*||w - w_global||^2 is added to each client's local
+    loss function, penalizing large deviations from the global model. This reduces
+    client drift and improves convergence stability under non-IID data distributions.
+
+    The proximal_mu coefficient is passed to clients via the training config and
+    applied in task.py's train() function.
+    """
+
+    def __init__(self, client_selection: str = "random", proximal_mu: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.client_selection = client_selection
+        self.client_losses = {}
+        self.client_metrics = {}
+        self.proximal_mu = proximal_mu
+
+    def configure_train(
+        self, server_round: int, arrays: ArrayRecord, config: ConfigRecord, grid: Grid
+    ) -> Iterable[Message]:
+        # Inject proximal_mu into the config so clients can read it
+        config["proximal_mu"] = self.proximal_mu
+        print(f"[Round {server_round}] Strategy=FedProx (mu={self.proximal_mu}), ClientSelection={self.client_selection}")
+        return super().configure_train(server_round, arrays, config, grid)
+
+
 # ======================== Strategy: Custom FedAdagrad ========================
 
 class CustomFedAdagrad(FedAdagrad):

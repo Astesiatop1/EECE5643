@@ -147,14 +147,20 @@ The predefined experiments in `run_experiments.py` cover:
 After running experiments, generate comparison plots:
 
 ```bash
-# Generate all plots from results/
+# 1. 默认：处理当前目录下的 metrics.json
 python plot_results.py
 
-# Only plot specific experiments
-python plot_results.py --filter cifar10
+# 2. 指定单个文件
+python plot_results.py metrics_fedprox_cifar10.json
 
-# Custom directories
-python plot_results.py --results-dir ./results --output-dir ./plots
+# 3. 对比多个实验（你的核心用法）
+python plot_results.py metrics_fedavg_cifar10.json metrics_fedprox_cifar10.json metrics_fedadagrad_cifar10.json
+
+# 4. 当前目录下所有 metrics*.json 一起对比
+python plot_results.py --all
+
+# 5. 指定输出目录
+python plot_results.py metrics_fedavg.json metrics_fedprox.json --output plots
 ```
 
 Generated plots:
@@ -194,6 +200,16 @@ If your system has a CUDA GPU, the code will automatically use it. To configure 
 ```toml
 [tool.flwr.federations.local-simulation.options]
 backend.client-resources.num-gpus = 0.5  # GPU fraction per client
+```
+
+### 实验报错（ray相关）后，可能先清理再重跑：
+
+```toml
+# 清理残留
+taskkill /F /IM raylet.exe 2>$null
+
+# 再跑新实验
+flwr run . --stream --run-config "..."
 ```
 
 ## Added:

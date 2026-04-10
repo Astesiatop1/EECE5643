@@ -1,34 +1,91 @@
 """Visualization utility for federated learning experiment results.
 
-Reads metrics_*.json files from the results directory and generates
-comparison plots for accuracy, loss, convergence, and communication cost.
-
 Usage:
-    python plot_results.py                          # default: ./results
-    python plot_results.py --results-dir ./results  # specify directory
-    python plot_results.py --filter noniid          # only plot matching experiments
+    # Default: plot metrics.json in current directory (single experiment)
+    python plot_results.py
+
+    # Plot specific file(s)
+    python plot_results.py metrics_fedprox_cifar10.json
+    python plot_results.py metrics_fedavg.json metrics_fedprox.json metrics_fedadagrad.json
+
+    # Plot all metrics*.json in current directory
+    python plot_results.py --all
+
+    # Plot all metrics*.json in a specific directory
+    python plot_results.py --all --dir results
+
+    # Custom output directory for plots
+    python plot_results.py --all --output plots
 """
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def load_results(results_dir: Path, name_filter: str = "") -> dict:
-    """Load all metrics_*.json files from the results directory."""
+def load_single_file(filepath: Path) -> tuple:
+    """Load a single metrics JSON file. Returns (name, data)."""
+    data = json.loads(filepath.read_text())
+    if not data:
+        return None, None
+
+    # Derive display name from filename
+    name = filepath.stem
+    if name == "metrics":
+        # For plain metrics.json, build name from config
+        cfg = data.get("config", {})
+        name = f"{cfg.get('strategy', 'exp')}_{cfg.get('dataset', '')}_{cfg.get('partitioner', '')}"
+    elif name.startswith("metrics_"):
+        name = name[len("metrics_"):]
+
+    return name, data
+
+
+def load_results(files: list = None, search_dir: Path = None, load_all: bool = False) -> dict:
+    """Load metrics results flexibly.
+
+    Args:
+        files: explicit list of file paths to load
+        search_dir: directory to search in
+        load_all: if True, load all metrics*.json in search_dir
+    """
     results = {}
-    for f in sorted(results_dir.glob("metrics_*.json")):
-        name = f.stem.replace("metrics_", "")
-        if name_filter and name_filter.lower() not in name.lower():
-            continue
-        data = json.loads(f.read_text())
-        if data:
-            results[name] = data
+
+    if files:
+        # Load explicitly specified files
+        for f in files:
+            p = Path(f)
+            if not p.exists():
+                print(f"  WARNING: {f} not found, skipping.")
+                continue
+            name, data = load_single_file(p)
+            if data:
+                results[name] = data
+
+    elif load_all:
+        # Load all metrics*.json in the directory
+        search_dir = search_dir or Path(".")
+        for f in sorted(search_dir.glob("metrics*.json")):
+            name, data = load_single_file(f)
+            if data:
+                results[name] = data
+
+    else:
+        # Default: load metrics.json in current directory
+        default = (search_dir or Path(".")) / "metrics.json"
+        if default.exists():
+            name, data = load_single_file(default)
+            if data:
+                results[name] = data
+
     return results
 
+
+# ======================== Plot Functions ========================
 
 def plot_accuracy_curves(results: dict, output_dir: Path):
     """Plot per-round accuracy curves for all experiments."""
@@ -99,7 +156,6 @@ def plot_convergence_bar(results: dict, output_dir: Path):
             r = conv.get(str(t), conv.get(t, None))
             vals.append(r if r is not None else 0)
         bars = ax.bar(x + i * width, vals, width, label=name)
-        # Mark N/A
         for j, v in enumerate(vals):
             if v == 0:
                 ax.text(x[j] + i * width, 0.5, "N/A", ha="center", va="bottom", fontsize=7, color="red")
@@ -126,7 +182,6 @@ def plot_final_comparison_bar(results: dict, output_dir: Path):
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-    # Final accuracy
     axes[0].barh(names, final_accs, color="steelblue")
     axes[0].set_xlabel("Final Accuracy")
     axes[0].set_title("Final Accuracy")
@@ -134,14 +189,12 @@ def plot_final_comparison_bar(results: dict, output_dir: Path):
     for i, v in enumerate(final_accs):
         axes[0].text(v + 0.01, i, f"{v:.4f}", va="center", fontsize=8)
 
-    # Communication cost
     axes[1].barh(names, comm_mbs, color="coral")
     axes[1].set_xlabel("Communication Cost (MB)")
     axes[1].set_title("Total Communication Cost")
     for i, v in enumerate(comm_mbs):
         axes[1].text(v + 0.5, i, f"{v:.1f}", va="center", fontsize=8)
 
-    # Total time
     axes[2].barh(names, total_times, color="mediumseagreen")
     axes[2].set_xlabel("Total Time (s)")
     axes[2].set_title("Total Training Time")
@@ -173,30 +226,51 @@ def plot_round_time(results: dict, output_dir: Path):
     plt.close(fig)
 
 
+# ======================== Main ========================
+
 def main():
-    parser = argparse.ArgumentParser(description="Plot FL experiment results")
-    parser.add_argument("--results-dir", type=str, default="results", help="Directory containing metrics_*.json")
-    parser.add_argument("--output-dir", type=str, default="", help="Directory for plots (default: same as results-dir)")
-    parser.add_argument("--filter", type=str, default="", help="Only plot experiments whose name contains this string")
+    parser = argparse.ArgumentParser(
+        description="Plot FL experiment results",
+        epilog="""Examples:
+  python plot_results.py                                    # plot metrics.json
+  python plot_results.py metrics_fedprox.json               # plot one specific file
+  python plot_results.py metrics_fedavg.json metrics_fedprox.json  # compare two
+  python plot_results.py --all                              # all metrics*.json in .
+  python plot_results.py --all --dir results                # all in results/
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("files", nargs="*", help="Specific metrics JSON file(s) to plot")
+    parser.add_argument("--all", action="store_true", help="Load all metrics*.json files in the directory")
+    parser.add_argument("--dir", type=str, default=".", help="Directory to search (default: current dir)")
+    parser.add_argument("--output", type=str, default="", help="Output directory for plots (default: same as --dir)")
     args = parser.parse_args()
 
-    results_dir = Path(args.results_dir)
-    output_dir = Path(args.output_dir) if args.output_dir else results_dir
+    search_dir = Path(args.dir)
+    output_dir = Path(args.output) if args.output else search_dir
     output_dir.mkdir(exist_ok=True)
 
-    results = load_results(results_dir, args.filter)
+    # Load results based on arguments
+    if args.files:
+        results = load_results(files=args.files)
+    elif args.all:
+        results = load_results(search_dir=search_dir, load_all=True)
+    else:
+        results = load_results(search_dir=search_dir)
+
     if not results:
-        print(f"No metrics files found in {results_dir}. Run experiments first.")
+        print(f"No metrics files found. Run experiments first or specify files explicitly.")
         return
 
-    print(f"Found {len(results)} experiment(s): {', '.join(results.keys())}")
+    print(f"Loaded {len(results)} experiment(s): {', '.join(results.keys())}")
     print(f"Generating plots in {output_dir.resolve()}...\n")
 
     plot_accuracy_curves(results, output_dir)
     plot_loss_curves(results, output_dir)
     plot_accuracy_vs_communication(results, output_dir)
-    plot_convergence_bar(results, output_dir)
-    plot_final_comparison_bar(results, output_dir)
+    if len(results) > 1:
+        plot_convergence_bar(results, output_dir)
+        plot_final_comparison_bar(results, output_dir)
     plot_round_time(results, output_dir)
 
     print(f"\nAll plots saved to {output_dir.resolve()}")

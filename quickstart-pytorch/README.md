@@ -195,3 +195,38 @@ If your system has a CUDA GPU, the code will automatically use it. To configure 
 [tool.flwr.federations.local-simulation.options]
 backend.client-resources.num-gpus = 0.5  # GPU fraction per client
 ```
+
+## Added:
+
+1. FedProx Strategy (strategy="fedprox")
+
+    Why it matters: FedProx is the standard solution for non-IID data heterogeneity in FL. It adds a proximal term (μ/2)·‖w - w_global‖² to each client's local loss, penalizing drift from the global model.
+
+    Code: custom_strategy.py → CustomFedProx class injects proximal_mu into training config; task.py → train() computes the proximal term when proximal_mu > 0.
+Config: strategy='fedprox' proximal-mu=0.1
+
+
+2. Differential Privacy (dp-clip, dp-noise)
+
+    Why it matters: FL alone doesn't guarantee privacy — gradients can leak information. Client-side DP (gradient clipping + Gaussian noise) provides formal privacy guarantees.
+
+    Code: task.py → train() applies clip_grad_norm_ and noise injection after loss.backward().
+
+    Config: dp-clip=1.0 dp-noise=0.01 (both 0 = disabled)
+
+
+3. Batch Experiment Runner (run_experiments.py)
+
+    13 predefined experiments covering strategy comparison, client selection comparison, model comparison, dataset comparison, and DP impact
+
+    python run_experiments.py runs all; --dry-run previews; --filter selects subset
+    
+    Auto-saves each result as results/metrics_<name>.json and prints a comparison table
+
+
+4. Visualization Utility (plot_results.py)
+Generates 6 publication-ready plots from experiment results:
+
+    Accuracy curves, loss curves, accuracy vs. communication cost
+    
+    Convergence speed bar chart, final comparison summary, per-round time
